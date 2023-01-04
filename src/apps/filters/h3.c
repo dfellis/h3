@@ -1,5 +1,5 @@
 /*
- * Copyright 2021 Uber Technologies, Inc.
+ * Copyright 2021-2023 Uber Technologies, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -37,6 +37,26 @@
 
 bool has(char *subcommand, int level, char *argv[]) {
     return strcasecmp(subcommand, argv[level]) == 0;
+}
+
+bool cellToBoundaryCmd(int argc, char *argv[]) {
+    Arg cellToBoundaryArg = {
+        .names = {"cellToBoundary"},
+        .required = true,
+        .helpText = "Convert an H3 cell to a list of latitude, longitude coordinates defining its boundary",
+    };
+    Arg helpArg = ARG_HELP;
+    DEFINE_CELL_ARG(cell, cellArg);
+    Arg *args[] = {&cellToBoundaryArg, &helpArg, &cellArg};
+    if (parseArgs(argc, argv, 3, args, &helpArg,
+                  "Convert an H3 cell to a latitude/longitude coordinate")) {
+        return helpArg.found;
+    }
+    LatLng ll;
+    H3_EXPORT(cellToLatLng)(cell, &ll);
+    printf("%.10lf, %.10lf\n", H3_EXPORT(radsToDegs)(ll.lat),
+           H3_EXPORT(radsToDegs)(ll.lng));
+    return true;
 }
 
 bool cellToLatLngCmd(int argc, char *argv[]) {
@@ -138,6 +158,9 @@ int main(int argc, char *argv[]) {
         return 0;
     }
     if (has("latLngToCell", 1, argv) && latLngToCellCmd(argc, argv)) {
+        return 0;
+    }
+    if (has("cellToBoundary", 1, argv) && cellToLatLngCmd(argc, argv)) {
         return 0;
     }
     if (generalHelp(argc, argv)) {
