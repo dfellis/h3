@@ -361,15 +361,29 @@ static inline Direction _unitIjkToDigit(const CoordIJK *ijk) {
     CoordIJK c = *ijk;
     _ijkNormalize(&c);
 
-    Direction digit = INVALID_DIGIT;
-    for (Direction i = CENTER_DIGIT; i < NUM_DIGITS; i++) {
-        if (_ijkMatches(&c, &UNIT_VECS[i])) {
-            digit = i;
-            break;
-        }
+    // UNIT_VECS is exactly the set of ijk with all components in {0, 1}
+    // (direction d encodes as 4*i + 2*j + k), so a range check replaces the
+    // 7-way comparison loop.
+    if (c.i < 0 || c.i > 1 || c.j < 0 || c.j > 1 || c.k < 0 || c.k > 1) {
+        return INVALID_DIGIT;
     }
+    return (Direction)(4 * c.i + 2 * c.j + c.k);
+}
 
-    return digit;
+/**
+ * Exact integer equivalent of lround(x * M_ONESEVENTH) for every int x:
+ * rounds x/7 half away from zero in pure integer arithmetic (no FP, no
+ * libm call).
+ *
+ * M_ONESEVENTH is the double nearest 1/7, slightly below it. For |x| <=
+ * INT32_MAX the bias x * (1/7 - M_ONESEVENTH) is < 1.3e-8 and the rounding
+ * error of the FP product is < 3e-8, both far below the 1/14 = 0.0714
+ * distance from any x/7 to the nearest .5 boundary, so
+ * lround(x * M_ONESEVENTH) equals exact half-away-from-zero rounding of
+ * x/7 for all int x. (2LL*x +/- 7 cannot overflow int64.)
+ */
+static inline int _roundDiv7(int x) {
+    return (int)((2LL * x + (x >= 0 ? 7LL : -7LL)) / 14LL);
 }
 
 /**
@@ -407,8 +421,8 @@ static inline H3Error _upAp7Checked(CoordIJK *ijk) {
         }
     }
 
-    ijk->i = (int)lround(((i * 3) - j) * M_ONESEVENTH);
-    ijk->j = (int)lround((i + (j * 2)) * M_ONESEVENTH);
+    ijk->i = _roundDiv7((i * 3) - j);
+    ijk->j = _roundDiv7(i + (j * 2));
     ijk->k = 0;
 
     // Expected not to be reachable, because max + min or max - min would need
@@ -455,8 +469,8 @@ static inline H3Error _upAp7rChecked(CoordIJK *ijk) {
         }
     }
 
-    ijk->i = (int)lround(((i * 2) + j) * M_ONESEVENTH);
-    ijk->j = (int)lround(((j * 3) - i) * M_ONESEVENTH);
+    ijk->i = _roundDiv7((i * 2) + j);
+    ijk->j = _roundDiv7((j * 3) - i);
     ijk->k = 0;
 
     // Expected not to be reachable, because max + min or max - min would need
@@ -479,8 +493,8 @@ static inline void _upAp7(CoordIJK *ijk) {
     int i = ijk->i - ijk->k;
     int j = ijk->j - ijk->k;
 
-    ijk->i = (int)lround((3 * i - j) * M_ONESEVENTH);
-    ijk->j = (int)lround((i + 2 * j) * M_ONESEVENTH);
+    ijk->i = _roundDiv7(3 * i - j);
+    ijk->j = _roundDiv7(i + 2 * j);
     ijk->k = 0;
     _ijkNormalize(ijk);
 }
@@ -496,8 +510,8 @@ static inline void _upAp7r(CoordIJK *ijk) {
     int i = ijk->i - ijk->k;
     int j = ijk->j - ijk->k;
 
-    ijk->i = (int)lround((2 * i + j) * M_ONESEVENTH);
-    ijk->j = (int)lround((3 * j - i) * M_ONESEVENTH);
+    ijk->i = _roundDiv7(2 * i + j);
+    ijk->j = _roundDiv7(3 * j - i);
     ijk->k = 0;
     _ijkNormalize(ijk);
 }

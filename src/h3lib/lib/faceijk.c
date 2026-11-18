@@ -60,6 +60,62 @@ static const Vec3d faceCenterPoint[NUM_ICOSA_FACES] = {
     {-0.1092625278784796, 0.4811951572873210, -0.8697775121287253},   // face 19
 };
 
+/** @brief Precomputed local north/east tangent basis at each face center.
+ *
+ * These are the exact results of the original runtime computation in
+ * _vec3TangentBasis (project the north pole onto the tangent plane at the
+ * face center, normalize, cross product), evaluated once offline with the
+ * same IEEE-754 double operations in the same order, so the values are
+ * bit-identical to the runtime-computed ones. Looking them up instead of
+ * recomputing them removes a sqrt, three divisions, and a dozen or so
+ * multiplies from every latLngToCell / cellToVec3-style conversion.
+ */
+static const Vec3d faceTangentNorth[NUM_ICOSA_FACES] = {
+    {-0.22807849577543152, -0.68275960452774354, 0.69413220800502795},
+    {0.79440296459872961, -0.54891780212390062, 0.26002533789655186},
+    {-0.19259342598459628, 0.84818670873360835, 0.49344409956464663},
+    {-0.50842460351993912, 0.24597587915262994, 0.8252274167832061},
+    {-0.43450219890112091, -0.18472374164056252, 0.88152423586898698},
+    {0.018416794358754516, -0.17089798399892206, 0.98511659246540539},
+    {0.55952630841152151, -0.10625630380794422, 0.82197317966978012},
+    {0.12962562242285569, 0.39368801231671813, 0.91005876017408827},
+    {0.058675694938615693, -0.052873413914935614, 0.99687590246953539},
+    {0.2001736005560226, 0.11104967124364792, 0.97344671151384332},
+    {0.058675694938615679, -0.052873413914935614, 0.99687590246953539},
+    {0.20017360055602257, 0.11104967124364795, 0.97344671151384332},
+    {0.018416794358754481, -0.17089798399892206, 0.98511659246540539},
+    {0.55952630841152151, -0.10625630380794426, 0.82197317966978012},
+    {0.12962562242285572, 0.39368801231671807, 0.91005876017408827},
+    {-0.50842460351993912, 0.24597587915262989, 0.8252274167832061},
+    {-0.43450219890112096, -0.18472374164056243, 0.88152423586898698},
+    {-0.2280784957754316, -0.68275960452774354, 0.69413220800502795},
+    {0.79440296459872928, -0.54891780212390107, 0.26002533789655186},
+    {-0.19259342598459611, 0.84818670873360835, 0.49344409956464663}
+};
+
+static const Vec3d faceTangentEast[NUM_ICOSA_FACES] = {
+    {-0.9484780715185176, 0.31684278096323037, 0},
+    {-0.56847222717148327, -0.82270245346339743, 1.3877787807814457e-17},
+    {0.97517663644548025, 0.22142838059038347, 0},
+    {0.43550924329289276, 0.90018425836405946, 2.7755575615628914e-17},
+    {-0.39124882757641738, 0.92028493137727663, 0},
+    {-0.9942434602486272, -0.10714449007222332, 0},
+    {-0.18656965018188404, -0.9824417365070609, -1.3877787807814457e-17},
+    {0.94983767542665576, -0.31274332980910569, -1.3877787807814457e-17},
+    {0.66942129386756466, 0.74288298628833604, 0},
+    {-0.48511579860789589, 0.87444991963006291, 0},
+    {-0.66942129386756466, -0.74288298628833593, 0},
+    {0.485115798607896, -0.8744499196300628, 0},
+    {0.9942434602486272, 0.10714449007222314, 0},
+    {0.18656965018188415, 0.9824417365070609, 0},
+    {-0.94983767542665565, 0.31274332980910574, 0},
+    {-0.43550924329289264, -0.90018425836405946, 2.7755575615628914e-17},
+    {0.39124882757641716, -0.92028493137727674, 0},
+    {0.9484780715185176, -0.31684278096323049, 0},
+    {0.56847222717148371, 0.8227024534633971, 0},
+    {-0.97517663644548025, -0.22142838059038328, 0}
+};
+
 /** @brief icosahedron face ijk axes as azimuth in radians from face center to
  * vertex 0/1/2 respectively
  */
@@ -362,37 +418,41 @@ void _vec3ToFaceIjk(Vec3d p, int res, FaceIJK *h) {
 }
 
 /**
- * Compute the local north and east directions on the tangent plane
- * at a point on the unit sphere.
+ * Look up the precomputed local north and east directions on the tangent
+ * plane at the center of the given icosahedron face.
  *
- * Will not work if p is at a pole, but icosahedron face centers
- * are never at the poles.
+ * The tables are bit-identical to the values the original runtime
+ * computation (project the north pole, normalize, cross product) produced,
+ * so this changes no outputs while avoiding the sqrt, three divisions, and
+ * a dozen or so multiplies per call.
  *
- * @param p Unit vector on the sphere.
+ * @param face The icosahedral face.
  * @param north Output: local north direction on tangent plane.
  * @param east Output: local east direction on tangent plane.
  */
-static inline void _vec3TangentBasis(Vec3d p, Vec3d *north, Vec3d *east) {
-    Vec3d northPole = {0.0, 0.0, 1.0};
-    *north = vec3LinComb(1.0, northPole, -vec3Dot(northPole, p), p);
-    vec3Normalize(north);
-    *east = vec3Cross(*north, p);
+static inline void _faceTangentBasis(int face, Vec3d *north, Vec3d *east) {
+    *north = faceTangentNorth[face];
+    *east = faceTangentEast[face];
 }
 
 /**
- * Calculates the azimuth from p1 to p2.
- * @param p1 The first vector.
+ * Calculates the azimuth from p1 (the center of icosahedral face `face`) to
+ * p2.
+ * @param face The icosahedral face containing both points.
+ * @param p1 The first vector (face center).
  * @param p2 The second vector.
  * @return The azimuth in radians.
  */
-static inline double _vec3AzimuthRads(Vec3d p1, Vec3d p2) {
+static inline double _vec3AzimuthRads(int face, Vec3d p1, Vec3d p2) {
     Vec3d northDir, eastDir;
-    _vec3TangentBasis(p1, &northDir, &eastDir);
+    _faceTangentBasis(face, &northDir, &eastDir);
 
     // project p2 onto tangent plane at p1
     Vec3d p2Proj = vec3LinComb(1.0, p2, -vec3Dot(p2, p1), p1);
-    vec3Normalize(&p2Proj);
-
+    // atan2 is homogeneous in its arguments, so the projection's magnitude
+    // (and its normalization) cancels out; skipping it removes a sqrt and
+    // three divisions per call. The resulting angle differs from the
+    // normalized version by at most a few ulp.
     return atan2(vec3Dot(p2Proj, eastDir), vec3Dot(p2Proj, northDir));
 }
 
@@ -423,7 +483,7 @@ static void _vec3ToHex2d(const Vec3d *p, int res, int *face, Vec2d *v) {
     // now have face and r, now find CCW theta from CII i-axis
     double theta = _posAngleRads(
         faceAxesAzRadsCII[*face][0] -
-        _posAngleRads(_vec3AzimuthRads(faceCenterPoint[*face], *p)));
+        _posAngleRads(_vec3AzimuthRads(*face, faceCenterPoint[*face], *p)));
 
     // adjust theta for Class III (odd resolutions)
     if (isResolutionClassIII(res))
@@ -496,7 +556,7 @@ static void _hex2dToVec3(const Vec2d *v, int face, int res, int substrate,
 
     // now find the point at (r,theta) from the face center
     Vec3d northDir, eastDir;
-    _vec3TangentBasis(faceCenterPoint[face], &northDir, &eastDir);
+    _faceTangentBasis(face, &northDir, &eastDir);
 
     Vec3d dir = vec3LinComb(cos(theta), northDir, sin(theta), eastDir);
 

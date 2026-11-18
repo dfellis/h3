@@ -30,21 +30,26 @@
 // Cagnoli contribution for edge arc x to y, following d3-geo’s
 // area implementation:
 // https://github.com/d3/d3-geo/blob/8c53a90ae70c94bace73ecb02f2c792c649c86ba/src/area.js#L51-L70
-static inline double cagnoli(LatLng x, LatLng y) {
-    x.lat = x.lat / 2.0 + M_PI / 4.0;
-    y.lat = y.lat / 2.0 + M_PI / 4.0;
+//
+// The sin/cos of each endpoint's adjusted latitude (lat / 2 + pi/4) are
+// passed in precomputed by the caller so a vertex shared by two adjacent
+// edges is evaluated once instead of once per incident edge. The result is
+// bit-identical to computing sin()/cos() inline: the same input doubles
+// feed the same operations in the same order.
+static inline double cagnoli(double xsin, double xcos, double xlng,
+                             double ysin, double ycos, double ylng) {
+    double sa = xsin * ysin;
+    double ca = xcos * ycos;
 
-    double sa = sin(x.lat) * sin(y.lat);
-    double ca = cos(x.lat) * cos(y.lat);
+    double d = ylng - xlng;
 
     // For an edge crossing the antimeridian, the raw difference is close to
     // +-2*pi, and the true (tiny) longitude step is lost to the ulp of 2*pi.
     // Shift both longitudes to the same side of the antimeridian first so
     // that the subtraction is between two nearby values; sin and cos are
     // 2*pi-periodic, so the result is mathematically unchanged.
-    double d = y.lng - x.lng;
     if (d > M_PI || d < -M_PI) {
-        d = (y.lng - copysign(M_PI, y.lng)) - (x.lng - copysign(M_PI, x.lng));
+        d = (ylng - copysign(M_PI, ylng)) - (xlng - copysign(M_PI, xlng));
     }
     double sd = sin(d);
     double cd = cos(d);
@@ -91,9 +96,37 @@ H3Error geoLoopAreaRads2(GeoLoop loop, double *out) {
     // terms
     Adder adder = {};
 
-    for (int i = 0; i < loop.numVerts; i++) {
-        int j = (i + 1) % loop.numVerts;
-        kadd(&adder, cagnoli(loop.verts[i], loop.verts[j]));
+    if (loop.numVerts <= 0) {
+        *out = 0.0;
+        return E_SUCCESS;
+    }
+
+    // Each vertex is the end of one edge and the start of the next, so a
+    // naive per-edge evaluation computes its adjusted-latitude sin/cos twice.
+    // Walk the loop once, carrying the previous vertex's precomputed
+    // (sin, cos, lng), so each vertex's latitude transcendentals are
+    // evaluated exactly once. Every Cagnoli term is bit-identical to the
+    // original per-edge computation: sin()/cos() receive the same input
+    // doubles, the term's operations keep the same order, and the Adder
+    // summation order (edges 0->1, 1->2, ..., n-1->0) is unchanged.
+    double lat = loop.verts[0].lat / 2.0 + M_PI / 4.0;
+    double prev_sin = sin(lat);
+    double prev_cos = cos(lat);
+    double prev_lng = loop.verts[0].lng;
+
+    for (int i = 1; i <= loop.numVerts; i++) {
+        int j = i % loop.numVerts;
+        double lat_j = loop.verts[j].lat / 2.0 + M_PI / 4.0;
+        double cur_sin = sin(lat_j);
+        double cur_cos = cos(lat_j);
+        double cur_lng = loop.verts[j].lng;
+
+        kadd(&adder, cagnoli(prev_sin, prev_cos, prev_lng,
+                             cur_sin, cur_cos, cur_lng));
+
+        prev_sin = cur_sin;
+        prev_cos = cur_cos;
+        prev_lng = cur_lng;
     }
 
     // The Cagnoli sum above yields a signed area, with the sign switching
