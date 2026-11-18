@@ -331,7 +331,8 @@ set(OTHER_SOURCE_FILES
     src/apps/benchmarks/benchmarkVertex.c
     src/apps/benchmarks/benchmarkIsValidCell.c
     src/apps/benchmarks/benchmarkH3Api.c
-    src/apps/benchmarks/benchmarkArea.c)
+    src/apps/benchmarks/benchmarkArea.c
+    src/apps/benchmarks/benchmarkPolygonArea.c)
 
 set(ALL_SOURCE_FILES
     ${LIB_SOURCE_FILES} ${APP_SOURCE_FILES} ${TEST_APP_SOURCE_FILES}
@@ -728,6 +729,8 @@ if(BUILD_BENCHMARKS)
                      src/apps/benchmarks/benchmarkPolygonToCellsExperimental.c)
     add_h3_benchmark(benchmarkArea
                      src/apps/benchmarks/benchmarkArea.c)
+    add_h3_benchmark(benchmarkPolygonArea
+                     src/apps/benchmarks/benchmarkPolygonArea.c)
     if(ENABLE_REQUIRES_ALL_SYMBOLS)
         add_h3_benchmark(benchmarkPolygon
                          src/apps/benchmarks/benchmarkPolygon.c)
